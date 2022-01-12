@@ -1,121 +1,113 @@
 import spacy
-from spacy.symbols import *
-nlp = spacy.load('en_core_web_md')
-nlp.Defaults.stop_words |= {'tt', 'ak', 'tl', 'tr', 'skd', 'aw'}
 from neo4j import GraphDatabase
-from string import punctuation
+import os
 
 
 
 
 
-def process_text(uri,driver,database,batchsize):
-    with driver.session(database=database) as session:
-        with session.begin_transaction() as tx:
-            results = tx.run(query, {})
-            batch = []
-            total = 0
-            for num, result in enumerate(results):
-                terms = get_terms_keywords(result['r']['text'])
-                batch.append({"id": result['r']['id'], "tp": terms})
-
-                if len(batch) % batchsize == 0:
-                    print("load batch", len(batch))
-                    load_terms(batch)
-                    total = total + len(batch)
-                    print("total loaded:", total)
-                    batch = []
-            print("process leftover batch", len(batch))
-            load_terms(batch)
-            total = total + len(batch)
-            print("total loaded:", total)
+def get_document(input_directory):
+    all_parameters = []
+    for root,directories,files in os.walk(input_directory):
+        paths = [os.path.join(root,file) for file in files]
+        for path in paths:
+            filename = os.path.basename(path)
+            with open(path) as fname:
+                text = fname.read().replace('\n','')
+                parameters = {'id':filename,'text':text}
+                all_parameters.append(parameters)
+    return all_parameters
 
 
 
-def load_terms(batch):
-    with driver.session(database=database) as session:
-        with session.begin_transaction() as tx:
-            res = tx.run(load, rows=batch)
+def batch_parameters(parameters:list,batch_size:int):
+    '''
+    Chunks a list into smaller sublists. The idea here is to take create batches or chunks of parameters.
+    :param parameters: input parameters
+    :param chunk_size: size of sublists
+    :return: list of lists. sublists contain a fixed number of elements (the last sublist will just contain the remainder)
+    '''
+    chunks = (parameters[x:x+batch_size] for x in range(0, len(parameters),batch_size))
+    return chunks
 
 
-def get_terms_keywords(data):
-    nps = []
-    doc = nlp(data)
-    for np in extract_keywords(nlp, data):
-        nps.append({"index": 9999, "text": str(np), "pos": "np"})
-    return {"terms": nps, "phrases": nps}
 
 
-def extract_keywords(nlp, sequence, special_tags: list = None):
-    """ Takes a Spacy core language model,
-    string sequence of text and optional
-    list of special tags as arguments.
+def create_document_in_neo(tx, batch):
+    tx.run(
+        '''
+        UNWIND $batch as param
+        CREATE (d:Document {id:param.id,text:param.text})
+        ''', parameters=batch)
 
-    If any of the words in the string are
-    in the list of special tags they are immediately
-    added to the result.
 
-    Arguments:
-        sequence {str} -- string sequence to have keywords extracted from
 
-    Keyword Arguments:
-        tags {list} --  list of tags to be automatically added (default: {None})
+def read_document_in_neo(tx):
+    results = []
+    result = tx.run(
+        '''
+        MATCH (d:Document) where exists (d.text) return d
+        '''
+    )
+    for record in result:
+        results.append(record)
+    return results
 
-    Returns:
-        {list} -- list of the unique keywords extracted from a string
-    """
-    result = []
 
-    # custom list of part of speech tags we are interested in
-    # we are interested in proper nouns, nouns, and adjectives
-    # edit this list of POS tags according to your needs.
-    pos_tag = ['PROPN', 'NOUN', 'ADJ']
 
-    # create a spacy doc object by calling the nlp object on the input sequence
-    doc = nlp(sequence.lower())
 
-    # if special tags are given and exist in the input sequence
-    # add them to results by default
-    if special_tags:
-        tags = [tag.lower() for tag in special_tags]
-        for token in doc:
-            if token.text in tags:
-                result.append(token.text)
-
-    for chunk in doc.noun_chunks:
-        final_chunk = ""
-        for token in chunk:
-            if (token.pos_ in pos_tag) and not token.is_stop:
-                final_chunk = final_chunk + token.text + " "
-        if final_chunk:
-            result.append(final_chunk.strip())
-    for token in doc:
-        if (token.text in nlp.Defaults.stop_words or token.text in punctuation):
-            continue
-        if (token.pos_ in pos_tag):
-            result.append(token.text)
-    return list(set(result))
 
 
 
 
 
 if __name__ == '__main__':
-    read_query = """
-    MATCH (r:Report) where exists (r.text) return r 
-    """
 
-    load_query = """
-    UNWIND $rows as row
-    MERGE (r:Report {id:row.id})
-    FOREACH (term in row.tp.terms |
-      MERGE (tf:Term {word:toLower(term.text)})
-      MERGE (r)-[:HAS_TERM]->(tf)
-    )
-    """
+    '''
+    Configuration
+    '''
 
-    uri = "bolt://localhost:7687"
-    driver = GraphDatabase.driver(uri, auth=("neo4j", "Reddit123!"))
-    database = "NLP"
-    batchsize = 4000
-    process_text(uri,driver,database,batchsize)
+
+    input_directory = '/Users/alexanderfournier/PycharmProjects/NLP/documents'
+    neo4j_uri = 'bolt://localhost:7687'
+    neo4j_database = 'NLP'
+    neo4j_driver = GraphDatabase.driver(neo4j_uri, auth=('neo4j','Reddit123!'))
+    nlp = spacy.load('en_core_web_md')
+
+
+
+
+
+
+    parameters =  get_document(input_directory)
+    batches = batch_parameters(parameters,500)
+
+
+    with neo4j_driver.session() as session:
+        for _batch in batches:
+            batch = {}
+            batch['batch'] = _batch
+
+            session.write_transaction(create_document_in_neo,batch)
+
+        texts = session.read_transaction(read_document_in_neo)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
