@@ -1,10 +1,8 @@
-import spacy
 from neo4j import GraphDatabase
 import os
 from spacy.cli.download import download
-
-
-
+from neo4j_batch import batch_parameters,ship_batch
+from nlp import get_unique_nouns_and_verbs
 
 
 
@@ -27,55 +25,6 @@ def get_document(input_directory):
 
 
 
-def batch_parameters(parameters:list,batch_size:int):
-    '''
-    Chunks a list into smaller sublists. The idea here is to take create batches or chunks of parameters.
-    :param parameters: input parameters
-    :param chunk_size: size of sublists
-    :return: list of lists. sublists contain a fixed number of elements (the last sublist will just contain the remainder)
-    '''
-    chunks = (parameters[x:x+batch_size] for x in range(0, len(parameters),batch_size))
-    return chunks
-
-
-def ship_batch(chunk):
-    '''
-    Parameters that are injected into Cypher must be a very specific data structure {'batch':[{k1,v1},{k2,v2}]}. All this function
-    does is wrap the list of dicts in a parent dictionary with key 'batch'
-    :param chunk: list(dict1,dict2). example: [{k1,v1},{k2,v2}]}
-    :return: batch: {'batch':[{k1,v1},{k2,v2}]}
-    '''
-    batch = {}
-    batch['batch'] = chunk
-    return batch
-
-
-
-def get_unique_nouns_and_verbs(record):
-    '''
-    Using spacy to extract Nouns and Verbs from Neo4j Record
-    :param record: Neo4j Record type - https://neo4j.com/docs/api/python-driver/current/api.html#record
-    :return: tuple(dict{string:set}) example: you can unpack the tuple as follows: unique_nouns,unique_verbs = {id:set{verbtext1,verbtext2,verbtext3},{id2:set{nountext1,nountext2}}. id is the filename.
-    '''
-    for properties in record:
-        text = properties.get('text')
-        id = properties.get('id')
-    nouns = []
-    verbs = []
-    #download(model='en_core_web_sm')
-    nlp = spacy.load('en_core_web_sm')
-    doc = nlp(text)
-    for token in doc:
-        if token.pos_ == 'NOUN':
-            nouns.append(token.text)
-        if token.pos_ == 'VERB':
-            verbs.append(token.text)
-
-    unique_nouns = {id:set(nouns)}
-    unique_verbs = {id:set(verbs)}
-
-    data = (unique_verbs,unique_nouns)
-    return data
 
 
 def process_words_to_cypher_parameters(word_dict, word_type = None):
