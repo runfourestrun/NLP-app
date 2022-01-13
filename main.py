@@ -102,16 +102,16 @@ def write_nouns(tx, batch):
     tx.run(
         '''
         UNWIND $batch as param
-        MERGE (n:Noun {id:param.word})
-        MERGE (d:Document {id:param.origin}) - [:CONTAINS] -> (n)
+        MATCH (d:Document{id:param.origin})
+        MERGE (n:Noun {id:param.word}) <- [:CONTAINS] - (d)
         ''',parameters=batch)
 
 def write_verbs(tx, batch):
     tx.run(
         '''
         UNWIND $batch as param
-        MERGE (v:Verb {id:param.word})
-        MERGE (d:Document {id:param.origin}) - [:CONTAINS] -> (v)
+        MATCH (d:Document{id:param.origin})
+        MERGE (v:Verb {id:param.word}) <- [:CONTAINS] - (d)
         '''
     ,parameters=batch)
 
@@ -134,7 +134,15 @@ if __name__ == '__main__':
     document_parameters =  get_document(input_directory)
     document_batches = batch_parameters(document_parameters,500)
 
+
     final_document_batches = list(map(ship_batch,document_batches))
+
+    '''
+    with neo4j_driver.session() as session:
+        for batch in final_document_batches:
+            session.write_transaction(create_document_in_neo,batch)
+        session.close()
+    '''
 
 
 
@@ -145,6 +153,8 @@ if __name__ == '__main__':
 
     with neo4j_driver.session() as session:
         records = session.read_transaction(read_document_in_neo)
+
+
 
 
         for record in records:
@@ -163,6 +173,8 @@ if __name__ == '__main__':
 
             for batch in final_noun_batches:
                 session.write_transaction(write_nouns,batch)
+
+        session.close()
 
 
 
