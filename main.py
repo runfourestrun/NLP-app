@@ -145,33 +145,30 @@ if __name__ == '__main__':
 
     with neo4j_driver.session() as session:
         records = session.read_transaction(read_document_in_neo)
-        for batch in final_document_batches:
-            session.write_transaction(create_document_in_neo,batch)
 
 
+        for record in records:
+            unique_verbs, unique_nouns = get_unique_nouns_and_verbs(record)
+            verb_parameters = process_words_to_cypher_parameters(unique_verbs, word_type='verb')
+            noun_parameters = process_words_to_cypher_parameters(unique_nouns, word_type='noun')
 
+            verb_batches = batch_parameters(verb_parameters, 500)
+            noun_batches = batch_parameters(noun_parameters,500)
 
+            final_verb_batches = list(map(ship_batch, verb_batches))
+            final_noun_batches = list(map(ship_batch,noun_batches))
 
+            for batch in final_verb_batches:
+                session.write_transaction(write_verbs,batch)
 
-    for record in records:
-        unique_verbs,unique_nouns = get_unique_nouns_and_verbs(record)
-        verb_parameters = process_words_to_cypher_parameters(unique_verbs,word_type='verb')
-        noun_parameters = process_words_to_cypher_parameters(unique_nouns,word_type='noun')
-
-        noun_batches = batch_parameters(noun_parameters,500)
-        final_noun_batches = list(map(ship_batch,noun_batches))
-
-
-
-        verb_batches = batch_parameters(verb_parameters,500)
-        final_verb_batches = list(map(ship_batch,verb_batches))
-
-
-
-
-        with neo4j_driver.session() as session:
             for batch in final_noun_batches:
                 session.write_transaction(write_nouns,batch)
+
+
+
+
+
+
 
 
 
