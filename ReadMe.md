@@ -1,5 +1,8 @@
 # In progress: NLP & NEO4j Python demo
 
+
+* The script takes text inputs (see /documents for samples), runs NLP against those inputs to find nouns and verbs, and encoding the results into a Graph
+
 ## Python application that takes documents and performs NLP analysis on them, loading the results into Neo4j. 
 
 
